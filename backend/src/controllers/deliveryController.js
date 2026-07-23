@@ -1,10 +1,11 @@
 import { supabase } from '../utils/supabaseClient.js';
 import fs from 'fs';
 import csv from 'csv-parser';
+import { geocodeAddress } from '../utils/geocoder.js';
 
 export const createDelivery = async (req, res) => {
   try {
-    const {
+    let {
       tracking_number,
       recipient_name,
       recipient_address,
@@ -13,6 +14,14 @@ export const createDelivery = async (req, res) => {
       recipient_phone,
       company_id
     } = req.body;
+
+    if (!recipient_lat || !recipient_lng) {
+      const coords = await geocodeAddress(recipient_address);
+      if (coords) {
+        recipient_lat = coords.lat;
+        recipient_lng = coords.lng;
+      }
+    }
 
     const { data, error } = await supabase
       .from('deliveries')
@@ -120,6 +129,8 @@ export const completeDelivery = async (req, res) => {
   }
 };
 
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 export const bulkUploadDeliveries = async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ success: false, error: 'No CSV file uploaded.' });
@@ -140,20 +151,32 @@ export const bulkUploadDeliveries = async (req, res) => {
       totalProcessed++;
       
       // Validation
-      if (!data.tracking_number || !data.recipient_name || !data.recipient_address || !data.recipient_lat || !data.recipient_lng) {
+      if (!data.tracking_number || !data.recipient_name || !data.recipient_address) {
         errors.push({
           row: totalProcessed,
-          reason: 'Missing recipient_lat coordinate or other required fields'
+          reason: 'Missing required fields'
         });
         continue;
+      }
+
+      let lat = data.recipient_lat ? parseFloat(data.recipient_lat) : null;
+      let lng = data.recipient_lng ? parseFloat(data.recipient_lng) : null;
+
+      if (!lat || !lng) {
+        const coords = await geocodeAddress(data.recipient_address);
+        await delay(550);
+        if (coords) {
+          lat = coords.lat;
+          lng = coords.lng;
+        }
       }
 
       results.push({
         tracking_number: data.tracking_number,
         recipient_name: data.recipient_name,
         recipient_address: data.recipient_address,
-        recipient_lat: parseFloat(data.recipient_lat),
-        recipient_lng: parseFloat(data.recipient_lng),
+        recipient_lat: lat,
+        recipient_lng: lng,
         recipient_phone: data.recipient_phone || null,
         company_id: company_id,
         status: 'pending'
@@ -163,7 +186,19 @@ export const bulkUploadDeliveries = async (req, res) => {
         const chunkToInsert = [...results];
         results.length = 0;
 
-        const { error } = await supabase.from('deliveries').insert(chunkToInsert);
+        let authClient = supabase;
+        if (req.headers.authorization) {
+          const { createClient } = await import('@supabase/supabase-js');
+          authClient = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
+            global: {
+              headers: {
+                Authorization: req.headers.authorization
+              }
+            }
+          });
+        }
+
+        const { error } = await authClient.from('deliveries').insert(chunkToInsert);
         if (error) {
           console.error('Error inserting chunk:', error);
           errors.push({
@@ -178,7 +213,18 @@ export const bulkUploadDeliveries = async (req, res) => {
 
     // Process remaining results
     if (results.length > 0) {
-      const { error } = await supabase.from('deliveries').insert(results);
+      let authClient = supabase;
+      if (req.headers.authorization) {
+        const { createClient } = await import('@supabase/supabase-js');
+        authClient = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
+          global: {
+            headers: {
+              Authorization: req.headers.authorization
+            }
+          }
+        });
+      }
+      const { error } = await authClient.from('deliveries').insert(results);
       if (error) {
         console.error('Error inserting final chunk:', error);
         errors.push({
