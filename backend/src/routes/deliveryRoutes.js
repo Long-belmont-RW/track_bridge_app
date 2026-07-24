@@ -26,7 +26,7 @@ router.post('/bulk-upload', verifyAuth, diskUpload.single('file'), bulkUploadDel
 // GET /api/deliveries/driver - Get deliveries for the authenticated driver (protected)
 router.get('/driver', verifyAuth, getDriverDeliveries);
 
-// PATCH /api/deliveries/:id/complete - Complete a delivery with PoD (protected, expects 'proof' file)
-router.patch('/:id/complete', verifyAuth, memoryUpload.single('proof'), completeDelivery);
+// PATCH /api/deliveries/:id/complete - Complete a delivery with PoD (protected)
+router.patch('/:id/complete', verifyAuth, completeDelivery);
 
 export default router;

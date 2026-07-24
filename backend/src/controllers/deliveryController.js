@@ -76,43 +76,38 @@ export const getDriverDeliveries = async (req, res) => {
 export const completeDelivery = async (req, res) => {
   try {
     const { id } = req.params;
-    const file = req.file;
+    const { status, signature_url, photo_url } = req.body;
+    const driver_id = req.user.id;
 
-    if (!file) {
-      return res.status(400).json({ error: 'Proof of delivery photo is required.' });
+    // Security Check: Ensure the delivery's parent route is assigned to the driver
+    const { data: delivery, error: fetchError } = await supabase
+      .from('deliveries')
+      .select(`
+        id,
+        route_id,
+        routes!inner (
+          driver_id
+        )
+      `)
+      .eq('id', id)
+      .single();
+
+    if (fetchError || !delivery) {
+      return res.status(404).json({ error: 'Delivery not found or an error occurred.' });
     }
 
-    // Prepare file for upload
-    const fileExt = file.originalname.split('.').pop() || 'jpg';
-    const fileName = `${id}-${Date.now()}.${fileExt}`;
-    const filePath = `proofs/${fileName}`;
-
-    // Upload to Supabase Storage
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('proof_of_delivery')
-      .upload(filePath, file.buffer, {
-        contentType: file.mimetype,
-      });
-
-    if (uploadError) {
-      console.error('Error uploading proof of delivery:', uploadError);
-      return res.status(400).json({ error: uploadError.message });
+    if (delivery.routes.driver_id !== driver_id) {
+      return res.status(403).json({ error: 'Unauthorized: You are not assigned to the route for this delivery.' });
     }
-
-    // Get public URL
-    const { data: publicUrlData } = supabase.storage
-      .from('proof_of_delivery')
-      .getPublicUrl(filePath);
-
-    const photoUrl = publicUrlData.publicUrl;
 
     // Update database row
     const { data: updateData, error: updateError } = await supabase
       .from('deliveries')
       .update({
-        status: 'delivered',
+        status: status || 'delivered',
         delivered_at: new Date().toISOString(),
-        proof_of_delivery_photo_url: photoUrl
+        proof_of_delivery_signature_url: signature_url,
+        proof_of_delivery_photo_url: photo_url
       })
       .eq('id', id)
       .select();

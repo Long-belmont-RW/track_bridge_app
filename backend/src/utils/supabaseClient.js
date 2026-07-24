@@ -11,3 +11,4 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseAnonKey || 'placeholder');
+export const supabaseAdmin = createClient(supabaseUrl || 'https://placeholder.supabase.co', process.env.SUPABASE_SERVICE_KEY || 'placeholder');
