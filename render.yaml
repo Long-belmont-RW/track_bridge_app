@@ -1,0 +1,48 @@
+services:
+  # Backend Node.js Service
+  - type: web
+    name: trackbridge-backend
+    env: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: LOCATIONIQ_API_KEY
+        sync: false
+      - key: FRONTEND_URL
+        fromService:
+          type: web
+          name: trackbridge-frontend
+          envVarKey: RENDER_EXTERNAL_URL
+
+  # Frontend React (Vite) Static Site
+  - type: web
+    name: trackbridge-frontend
+    env: static
+    rootDir: TrackBridge
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        fromService:
+          type: web
+          name: trackbridge-backend
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: VITE_LOCATIONIQ_KEY
+        sync: false
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
