@@ -51,14 +51,17 @@ export function AuthProvider({ children }) {
       isAuthenticated: !!user,
       // Mock "sign in" — in production this posts to /auth/login and
       // stores the returned access + refresh tokens instead of a plain object.
-      signIn: async ({ role, email }) => {
-        const session = {
-          id: `${role}-${Date.now()}`,
-          role, // "customer" | "company" | "driver"
-          name: role === "company" ? "Your Company" : "Your Name",
-          email,
-          ...(role === "company" ? seedCompanyBilling() : {}),
-        };
+      signIn: async (data) => {
+        const appRole = data.user_metadata?.role || data.role;
+        const session = data.id
+          ? { ...data, role: appRole, ...(appRole === "company" && !data.planStatus ? seedCompanyBilling() : {}) }
+          : {
+              id: `${data.role}-${Date.now()}`,
+              role: data.role,
+              name: data.role === "company" ? "Your Company" : "Your Name",
+              email: data.email,
+              ...(data.role === "company" ? seedCompanyBilling() : {}),
+            };
         setUser(session);
         return session;
       },

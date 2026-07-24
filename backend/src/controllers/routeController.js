@@ -1,12 +1,14 @@
-import { supabase } from '../utils/supabaseClient.js';
+import { supabase, supabaseAdmin } from '../utils/supabaseClient.js';
 import { performDBSCAN } from '../utils/clustering.js';
 
 export const generateRoutes = async (req, res) => {
   try {
-    const { data, error } = await supabase
+    const company_id = req.user.company_id || req.user.user_metadata?.company_id || req.user.id;
+    const { data, error } = await supabaseAdmin
       .from('deliveries')
       .select('*')
-      .eq('status', 'pending');
+      .eq('status', 'pending')
+      .eq('company_id', company_id);
 
     if (error) {
       throw error;
@@ -32,7 +34,7 @@ export const assignRoute = async (req, res) => {
       return res.status(400).json({ error: 'driver_id is required' });
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('routes')
       .update({ driver_id })
       .eq('id', route_id)

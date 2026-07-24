@@ -1,7 +1,29 @@
-import { supabase } from '../utils/supabaseClient.js';
+import { supabase, supabaseAdmin } from '../utils/supabaseClient.js';
 import fs from 'fs';
 import csv from 'csv-parser';
 import { geocodeAddress } from '../utils/geocoder.js';
+
+export const getCompanyDeliveries = async (req, res) => {
+  try {
+    const company_id = req.user.company_id || req.user.user_metadata?.company_id || req.user.id;
+    
+    const { data, error } = await supabaseAdmin
+      .from('deliveries')
+      .select('*')
+      .eq('company_id', company_id)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching company deliveries:', error);
+      return res.status(400).json({ error: error.message });
+    }
+
+    return res.status(200).json({ data });
+  } catch (err) {
+    console.error('Server error fetching company deliveries:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
 
 export const createDelivery = async (req, res) => {
   try {
@@ -55,7 +77,7 @@ export const getDriverDeliveries = async (req, res) => {
   try {
     const driver_id = req.user.id;
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('deliveries')
       .select('*')
       .eq('driver_id', driver_id)
@@ -76,11 +98,33 @@ export const getDriverDeliveries = async (req, res) => {
 export const completeDelivery = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, signature_url, photo_url } = req.body;
+    let { status, signature_url, photo_url } = req.body;
     const driver_id = req.user.id;
 
+    if (req.file) {
+      const fileExt = req.file.originalname.split('.').pop();
+      const fileName = `${Date.now()}_${id}.${fileExt}`;
+      const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
+        .from('pod-images')
+        .upload(fileName, req.file.buffer, {
+          contentType: req.file.mimetype,
+          upsert: false
+        });
+
+      if (uploadError) {
+        console.error('Error uploading photo:', uploadError);
+        return res.status(500).json({ error: 'Failed to upload photo.' });
+      }
+
+      const { data: { publicUrl } } = supabaseAdmin.storage
+        .from('pod-images')
+        .getPublicUrl(fileName);
+        
+      photo_url = publicUrl;
+    }
+
     // Security Check: Ensure the delivery's parent route is assigned to the driver
-    const { data: delivery, error: fetchError } = await supabase
+    const { data: delivery, error: fetchError } = await supabaseAdmin
       .from('deliveries')
       .select(`
         id,
@@ -101,7 +145,7 @@ export const completeDelivery = async (req, res) => {
     }
 
     // Update database row
-    const { data: updateData, error: updateError } = await supabase
+    const { data: updateData, error: updateError } = await supabaseAdmin
       .from('deliveries')
       .update({
         status: status || 'delivered',
@@ -257,5 +301,43 @@ export const bulkUploadDeliveries = async (req, res) => {
       console.error('Cleanup error:', e);
     }
     return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+};
+
+export const trackDeliveryPublic = async (req, res) => {
+  try {
+    const { tracking_number } = req.params;
+    
+    // We use supabaseAdmin to bypass row level security for the public portal
+    const { data, error } = await supabaseAdmin
+      .from('deliveries')
+      .select(`
+        tracking_number,
+        recipient_name,
+        recipient_address,
+        status,
+        delivered_at,
+        proof_of_delivery_photo_url,
+        route_id,
+        routes (
+          driver_id,
+          driver:driver_id (
+            first_name,
+            last_name
+          )
+        )
+      `)
+      .eq('tracking_number', tracking_number)
+      .single();
+
+    if (error || !data) {
+      console.error('Tracking not found:', error);
+      return res.status(404).json({ error: 'Tracking number not found.' });
+    }
+
+    return res.status(200).json({ data });
+  } catch (err) {
+    console.error('Server error tracking delivery:', err);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 };

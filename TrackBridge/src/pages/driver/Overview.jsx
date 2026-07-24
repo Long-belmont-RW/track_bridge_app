@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
-import { listDeliveries } from "../../data/api";
+import api from "../../services/api";
 import { PageHeader, StatCard, Card, EmptyState } from "../../components/Ui";
 import { Package } from "lucide-react";
+import RouteMap from "../../components/RouteMap";
 
 export default function DriverOverview() {
   const { user } = useAuth();
@@ -10,7 +11,17 @@ export default function DriverOverview() {
   const [deliveries, setDeliveries] = useState([]);
 
   useEffect(() => {
-    listDeliveries({ driverId: user.id }).then(setDeliveries);
+    async function fetchRoutes() {
+      try {
+        const response = await api.get('/drivers/my-routes');
+        const routes = response.data.data || [];
+        const allDeliveries = routes.flatMap(r => r.deliveries || []);
+        setDeliveries(allDeliveries);
+      } catch (error) {
+        console.error('Failed to fetch driver routes:', error);
+      }
+    }
+    fetchRoutes();
   }, [user.id]);
 
   const remaining = deliveries.filter((d) => !["delivered", "cancelled", "failed"].includes(d.status)).length;
@@ -19,6 +30,10 @@ export default function DriverOverview() {
   return (
     <>
       <PageHeader title="Overview" subtitle="Today's route at a glance." />
+
+      <Card style={{ padding: 0, overflow: 'hidden', height: '400px', marginBottom: '24px' }}>
+        <RouteMap deliveries={deliveries} />
+      </Card>
 
       <Card>
         <div className="availability-row">
@@ -55,7 +70,10 @@ export default function DriverOverview() {
           <ul className="stop-list">
             {deliveries.slice(0, 5).map((d) => (
               <li key={d.id}>
-                <strong>{d.trackingNumber}</strong> — {d.address}
+                <strong>{d.tracking_number}</strong> — {d.recipient_address}
+                <div style={{ fontSize: '0.85em', color: '#666', marginTop: '4px' }}>
+                  {d.recipient_name} • {d.recipient_phone || 'No phone'}
+                </div>
               </li>
             ))}
           </ul>

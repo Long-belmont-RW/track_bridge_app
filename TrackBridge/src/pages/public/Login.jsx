@@ -3,35 +3,46 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ShieldCheck, ArrowLeft, ArrowRight, Lock } from "lucide-react";
 import RoleTabs from "../../components/RoleTabs";
 import { useAuth } from "../../context/AuthContext";
+import { login } from "../../services/authService";
 
 export default function Login() {
   const [role, setRole] = useState("customer");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const { signIn } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
-  async function handleSubmit(e) {
+  async function handleLogin(e) {
     e.preventDefault();
     if (!email || !password) {
       setError("Enter your email address and password.");
       return;
     }
     setError("");
-    setSubmitting(true);
-    await signIn({ role, email });
-    setSubmitting(false);
-    const redirectTo = location.state?.from?.pathname || `/${role}`;
-    navigate(redirectTo, { replace: true });
+    setIsLoading(true);
+    try {
+      const user = await login(email, password);
+      const appRole = user?.user_metadata?.role || (user?.role !== 'authenticated' ? user?.role : null) || role;
+      
+      // Update global context state with the authenticated user
+      await signIn(user || { role: appRole, email });
+      
+      const redirectTo = location.state?.from?.pathname || `/${appRole}`;
+      navigate(redirectTo, { replace: true });
+    } catch (err) {
+      setError(err.response?.data?.error || "Login failed");
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   async function handleGoogle() {
-    setSubmitting(true);
+    setIsLoading(true);
     await signIn({ role, email: "you@gmail.com" });
-    setSubmitting(false);
+    setIsLoading(false);
     navigate(`/${role}`, { replace: true });
   }
 
@@ -50,7 +61,7 @@ export default function Login() {
 
         <RoleTabs value={role} onChange={setRole} />
 
-        <form onSubmit={handleSubmit} className="auth-form">
+        <form onSubmit={handleLogin} className="auth-form">
           <label className="field">
             <span>
               Email address <em>Required</em>
@@ -77,14 +88,14 @@ export default function Login() {
 
           {error && <div className="form-error">{error}</div>}
 
-          <button className="btn btn-dark btn-block" type="submit" disabled={submitting}>
-            {submitting ? "Signing in…" : (<>Sign in to dashboard <ArrowRight size={15} /></>)}
+          <button className="btn btn-dark btn-block" type="submit" disabled={isLoading}>
+            {isLoading ? "Signing in..." : (<>Sign in to dashboard <ArrowRight size={15} /></>)}
           </button>
         </form>
 
         <div className="divider">or continue with</div>
 
-        <button className="btn btn-outline btn-block" onClick={handleGoogle} disabled={submitting}>
+        <button className="btn btn-outline btn-block" onClick={handleGoogle} disabled={isLoading}>
           <span aria-hidden="true">G</span> Sign in with Google
         </button>
 

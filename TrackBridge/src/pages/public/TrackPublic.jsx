@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { findByTrackingNumber } from "../../data/api";
+import { getPublicTracking } from "../../services/deliveryService";
 import TrackingTimeline from "../../components/TrackingTimeline";
 import { formatNaira } from "../../utils/currency";
 import { EmptyState } from "../../components/Ui";
@@ -14,10 +14,30 @@ export default function TrackPublic() {
     e.preventDefault();
     if (!value.trim()) return;
     setLoading(true);
-    const found = await findByTrackingNumber(value);
-    setResult(found);
-    setLoading(false);
+    setResult(undefined);
+    try {
+      const response = await getPublicTracking(value.trim());
+      if (response && response.data) {
+        setResult(response.data);
+      } else {
+        setResult(null);
+      }
+    } catch (err) {
+      setResult(null);
+    } finally {
+      setLoading(false);
+    }
   }
+
+  const getStepIndex = (status) => {
+    switch(status) {
+      case 'pending': return 0;
+      case 'assigned': return 1;
+      case 'in_transit': return 2;
+      case 'delivered': return 3;
+      default: return 0;
+    }
+  };
 
   return (
     <div className="track-page">
@@ -53,24 +73,39 @@ export default function TrackPublic() {
       {result && (
         <div className="card tracking-result">
           <div className="tracking-result-header">
-            <strong>{result.trackingNumber}</strong>
-            <span className="pill pill-delivered">Delivered</span>
+            <strong>{result.tracking_number}</strong>
+            <span className={`pill pill-${result.status === 'delivered' ? 'delivered' : 'pending'}`}>
+              {result.status.replace('_', ' ').toUpperCase()}
+            </span>
           </div>
 
-          <TrackingTimeline currentStepIndex={2} />
+          <TrackingTimeline currentStepIndex={getStepIndex(result.status)} />
 
           <div className="tracking-grid">
-            <Field label="Recipient" value={maskName(result.recipientName)} />
-            <Field label="Address" value={result.address} />
-            <Field label="Package" value={maskName(result.item)} />
-            <Field label="Driver" value={result.driverName} />
-            <Field label="Distance" value={`${result.distanceKm} km`} />
-            <Field label="Delivery fee" value={formatNaira(result.fee)} />
+            <Field label="Recipient" value={maskName(result.recipient_name)} />
+            <Field label="Address" value={result.recipient_address} />
+            <Field label="Driver" value={result.routes?.driver ? `${result.routes.driver.first_name || ''} ${result.routes.driver.last_name || ''}`.trim() : "Pending"} />
           </div>
+          
+          {result.status === 'delivered' && result.proof_of_delivery_photo_url && (
+            <div className="proof-of-delivery-container" style={{ marginTop: '20px', padding: '15px', backgroundColor: '#f9fafb', borderRadius: '8px' }}>
+              <h4 style={{ marginBottom: '10px' }}>Proof of Delivery</h4>
+              <img 
+                src={result.proof_of_delivery_photo_url} 
+                alt="Proof of Delivery" 
+                style={{ width: '100%', maxWidth: '300px', borderRadius: '8px', border: '1px solid #e5e7eb' }} 
+              />
+              <div className="proof-note" style={{ marginTop: '10px' }}>
+                <CheckCircle2 size={15} /> Delivered at {new Date(result.delivered_at).toLocaleString()}
+              </div>
+            </div>
+          )}
 
-          <div className="proof-note">
-            <CheckCircle2 size={15} /> Verified with 4 of 4 proof methods (2 required)
-          </div>
+          {result.status !== 'delivered' && (
+            <div className="proof-note">
+              <CheckCircle2 size={15} /> Your delivery is verified securely.
+            </div>
+          )}
         </div>
       )}
 

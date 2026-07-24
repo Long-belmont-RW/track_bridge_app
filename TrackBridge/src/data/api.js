@@ -3,6 +3,7 @@
 // production TrackBridge REST API once the backend exists.
 
 import { db, nextId, STATUS_LABELS, getOrCreateApiKey, regenerateApiKey } from "./mockData";
+import api from "../services/api";
 
 const DELAY_MS = 250;
 
@@ -13,6 +14,42 @@ function delay(value) {
 // ---------- Deliveries ----------
 
 export async function listDeliveries({ companyId, customerId, driverId, status } = {}) {
+  try {
+    let endpoint = '/deliveries';
+    if (driverId) {
+      endpoint = '/deliveries/driver';
+    }
+    
+    // Attempt real API fetch
+    const response = await api.get(endpoint);
+    if (response?.data?.data) {
+      let rows = response.data.data;
+      if (status && status !== "all") rows = rows.filter((d) => d.status === status);
+      
+      // Map from backend snake_case to frontend camelCase
+      const mapped = rows.map(d => ({
+        id: d.id,
+        trackingNumber: d.tracking_number,
+        recipientName: d.recipient_name,
+        recipientAddress: d.recipient_address,
+        recipientLat: d.recipient_lat,
+        recipientLng: d.recipient_lng,
+        recipientPhone: d.recipient_phone,
+        status: d.status,
+        companyId: d.company_id,
+        driverId: d.driver_id,
+        routeId: d.route_id,
+        createdAt: new Date(d.created_at).getTime(),
+        events: []
+      }));
+      
+      return mapped.sort((a, b) => b.createdAt - a.createdAt);
+    }
+  } catch (error) {
+    console.error("API fetch failed, falling back to mock data:", error.message);
+  }
+
+  // Fallback to mock data
   let rows = db.deliveries;
   if (companyId) rows = rows.filter((d) => d.companyId === companyId);
   if (customerId) rows = rows.filter((d) => d.customerId === customerId);
